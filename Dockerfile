@@ -1,25 +1,25 @@
-ARG ROS_DISTRO=humble
-FROM ros:${ROS_DISTRO}-ros-base
-ARG USE_RVIZ
-ARG BUILD_SEQUENTIAL=0
-ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update \
-   && apt-get -y install --no-install-recommends software-properties-common git libusb-1.0-0-dev wget zsh python3-colcon-common-extensions
+# For more information, please refer to https://aka.ms/vscode-docker-python
+FROM python:3-slim
 
+EXPOSE 8000
 
-ENV DEBIAN_FRONTEND=dialog
-RUN sh -c "$(wget https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh -O -)"
+# Keeps Python from generating .pyc files in the container
+ENV PYTHONDONTWRITEBYTECODE=1
 
-ENV WS=/ws
-RUN mkdir -p $WS/src
-COPY ./ .$WS/src/depthai-ros
-RUN cd .$WS/ && rosdep install --from-paths src --ignore-src  -y
+# Turns off buffering for easier container logging
+ENV PYTHONUNBUFFERED=1
 
-RUN cd .$WS/ && . /opt/ros/${ROS_DISTRO}/setup.sh && ./src/depthai-ros/build.sh -s $BUILD_SEQUENTIAL -r 1 -m 1 
-RUN if [ "$USE_RVIZ" = "1" ] ; then echo "RVIZ ENABLED" && sudo apt install -y ros-${ROS_DISTRO}-rviz2 ros-${ROS_DISTRO}-rviz-imu-plugin ; else echo "RVIZ NOT ENABLED"; fi
-RUN echo "if [ -f ${WS}/install/setup.zsh ]; then source ${WS}/install/setup.zsh; fi" >> $HOME/.zshrc
-RUN echo 'eval "$(register-python-argcomplete3 ros2)"' >> $HOME/.zshrc
-RUN echo 'eval "$(register-python-argcomplete3 colcon)"' >> $HOME/.zshrc
-RUN echo "if [ -f ${WS}/install/setup.bash ]; then source ${WS}/install/setup.bash; fi" >> $HOME/.bashrc
-ENTRYPOINT [ "/ws/src/depthai-ros/entrypoint.sh" ]
-CMD ["zsh"]
+# Install pip requirements
+COPY requirements.txt .
+RUN python -m pip install -r requirements.txt
+
+WORKDIR /app
+COPY . /app
+
+# Creates a non-root user with an explicit UID and adds permission to access the /app folder
+# For more info, please refer to https://aka.ms/vscode-docker-python-configure-containers
+RUN adduser -u 5678 --disabled-password --gecos "" appuser && chown -R appuser /app
+USER appuser
+
+# During debugging, this entry point will be overridden. For more information, please refer to https://aka.ms/vscode-docker-python-debug
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "-k", "uvicorn.workers.UvicornWorker", "depthai_filters.launch/example_feature_3d.launch:app"]
